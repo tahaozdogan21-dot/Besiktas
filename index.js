@@ -424,7 +424,7 @@ const DETAY_VIDEO_URL = 'https://res.cloudinary.com/dzfiyamng/video/upload/copy_
 // Müşteri o linke tıkladığında hangi Instagram kullanıcısı olduğunu sitenin de bilmesi
 // için, botun ürettiği her sipariş linkine sunucu tarafında otomatik &iid=<instagram_id>
 // ekleniyor (LLM'in kendi konuştuğu kişinin ID'sini bilmesine gerek kalmasın diye).
-const SIPARIS_FORM_URL = process.env.SIPARIS_FORM_URL || 'https://taraftarmagazasi.com.tr/besiktas/siparis.html';
+const SIPARIS_FORM_URL = 'https://taraftarmagazasi.com.tr/sipariss/siparis.html';
 
 function siparisLinkineIidEkle(metin, id) {
   if (!metin || !metin.includes(SIPARIS_FORM_URL)) return metin;
