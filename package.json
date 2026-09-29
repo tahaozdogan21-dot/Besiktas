@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Claude API ile calisan WhatsApp siparis botu",
   "main": "index.js",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
