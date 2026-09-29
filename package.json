@@ -1,0 +1,17 @@
+{
+  "name": "whatsapp-siparis-bot",
+  "version": "1.0.0",
+  "description": "Claude API ile calisan WhatsApp siparis botu",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@whiskeysockets/baileys": "^6.7.9",
+    "dotenv": "^16.4.5",
+    "pino": "^9.5.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
