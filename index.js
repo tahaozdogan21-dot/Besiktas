@@ -18,6 +18,9 @@ const TURSO_TOKEN        = process.env.TURSO_TOKEN;
 const ORDER_WEBHOOK_SECRET = process.env.ORDER_WEBHOOK_SECRET || '';
 
 // ─── TURSO KURULUM ─────────────────────────────────────────────────────────────
+process.on('unhandledRejection', (e) => console.error('UNHANDLED REJECTION:', e && e.stack ? e.stack : e));
+process.on('uncaughtException', (e) => console.error('UNCAUGHT EXCEPTION:', e && e.stack ? e.stack : e));
+
 const db = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
 
 async function dbInit() {
@@ -159,12 +162,25 @@ async function dbKullaniciAl(id) {
 }
 
 async function dbKaydet(id, data) {
+  try {
+    return await dbKaydetAsil(id, data, true);
+  } catch (e) {
+    console.error('dbKaydet hata:', e.message);
+    if (/sepet/i.test(String(e.message))) {
+      // "sepet" kolonu yoksa ekle ve tekrar dene; olmazsa sepetsiz kaydet (müşteri cevapsız kalmasın)
+      try { await db.execute("ALTER TABLE kullanicilar_bjk ADD COLUMN sepet TEXT DEFAULT '[]'"); } catch (e2) {}
+      try { return await dbKaydetAsil(id, data, true); } catch (e3) { return await dbKaydetAsil(id, data, false); }
+    }
+    throw e;
+  }
+}
+async function dbKaydetAsil(id, data, sepetli) {
   const simdi = Math.floor(Date.now() / 1000);
   await db.execute({
     sql: `UPDATE kullanicilar_bjk
           SET gorsel_gitti = ?, kart_uyari_gitti = ?, video_gitti = ?, konusmalar = ?,
               son_mesaj = ?, guncelleme = unixepoch(),
-              siparis_verildi = ?, siparis_tarihi = ?, sepet = ?
+              siparis_verildi = ?, siparis_tarihi = ?${sepetli ? ', sepet = ?' : ''}
           WHERE id = ?`,
     args: [
       data.gorselGitti ? 1 : 0,
@@ -174,9 +190,7 @@ async function dbKaydet(id, data) {
       simdi,
       data.siparisVerildi ? 1 : 0,
       data.siparisTarihi || 0,
-      JSON.stringify((data.sepet || []).slice(0, 12)),
-      id,
-    ],
+    ].concat(sepetli ? [JSON.stringify((data.sepet || []).slice(0, 12))] : [], [id]),
   });
 }
 
@@ -1418,6 +1432,25 @@ function siteSorusuMu(m) { return SITE_SORUSU_RE.test(m); }
 
 // ─── ANA İŞLEM DÖNGÜSÜ ────────────────────────────────────────────────────────
 async function isle(id) {
+  const durum = islemDurumuAl(id);
+  try {
+    await isleAsil(id);
+  } catch (e) {
+    console.error('ISLE HATASI | müşteri:', id, '|', e && e.stack ? e.stack : e);
+    durum.mesgulMu = false; // aksi halde bu müşterinin sonraki mesajları sonsuza kadar yok sayılırdı
+    try {
+      await telegramUyariGonder('BOT HATASI (müşteriye cevap gidemedi)', 'Müşteri: ' + id + '\n' + String((e && e.stack) || e).split('\n').slice(0, 5).join('\n'));
+    } catch (e2) {}
+    try {
+      if (!durum.hataMesajiZamani || Date.now() - durum.hataMesajiZamani > 5 * 60 * 1000) {
+        durum.hataMesajiZamani = Date.now();
+        await igMesaj(id, 'Mesajınız bize ulaştı, kısa süre içinde size dönüş yapacağız.');
+      }
+    } catch (e3) { console.error('Hata mesajı da gönderilemedi:', e3.message); }
+  }
+}
+
+async function isleAsil(id) {
   const durum = islemDurumuAl(id);
 
   if (durum.mesgulMu) return;
