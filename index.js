@@ -524,14 +524,32 @@ function bedenUygula(sepet, sonuc) {
 // <<< BEDEN_ALGILA_BITIS
 
 // Kampanya metni varyasyonları (aynı metnin herkese gitmemesi için). 4 forma fiyatı BİLEREK yok.
-const VITRIN_VARYASYONLARI = [
-  'Kargo dahil 1 forma 690₺. 2 forma alana 3. forma hediye, 3 forma 1.350₺.\n\nEşofman üstlerimiz 1.250₺. 1 eşofman üstü ile 1 forma alana 1 forma daha, 2 eşofman üstü alana 1 forma hediye.\n\nKapıda ödeme, ürünü görüp teslim alıyorsunuz.',
-  'Fiyatlarımız kargo dahil: tek forma 690₺, 2 Al 1 Hediye ile 3 forma 1.350₺.\n\nEşofman üstü 1.250₺. 1 eşofman üstü ve 1 forma alana 1 forma daha bizden, 2 eşofman üstü alana 1 forma hediye.\n\nÖdeme kapıda, ürünü kontrol edip teslim alabilirsiniz.',
-  '1 forma 690₺, kargo dahil. 2 forma alın, 3. forma bizden, toplam 1.350₺.\n\nEşofman üstleri 1.250₺. Eşofman üstüyle 1 forma alana 1 forma daha hediye, 2 eşofman üstü alana 1 forma hediye.\n\nKapıda ödeme yapıyorsunuz, ürünü görüp teslim alıyorsunuz 🙏🏻',
-  'Kargo dahil tek forma 690₺, 3 forma 1.350₺ (2 Al 1 Hediye).\n\nEşofman üstümüz 1.250₺. 1 eşofman üstü + 1 forma alana 1 forma daha hediye, 2 eşofman üstü alana 1 forma hediye.\n\nÜrünü görüp kapıda ödeyerek teslim alıyorsunuz.',
-  'Formamız kargo dahil 690₺, 2 Al 1 Hediye ile 3 forma 1.350₺.\n\nEşofman üstleri 1.250₺. Bir eşofman üstüyle bir forma alana bir forma daha hediye, iki eşofman üstü alana bir forma hediye.\n\nKapıda ödeme ve şeffaf kargo ile gönderiyoruz, ürünü görüp teslim alabilirsiniz 🙏🏻',
+// İlk temasta fiyat/kampanya YAZILMAZ (farklı ürünlere reklam verildiği için çakışmasın): sadece karşılama + kutucuk.
+const KARSILAMA_VARYASYONLARI = [
+  'Merhaba, iyi günler. İlgilendiğiniz ürün ve modellere göz atmak için aşağıdaki kutucuğa tıklayınız.',
+  'Merhaba, hoş geldiniz. İlgilendiğiniz ürün ve modellere göz atmak için ilgili kutucuğa tıklayınız.',
+  'İyi günler, hoş geldiniz. İlgilendiğiniz ürün ve modellere göz atmak için aşağıdaki kutucuğa tıklayabilirsiniz.',
+  'Merhaba, iyi günler dileriz. Ürün ve modellerimize göz atmak için ilgili kutucuğa tıklayınız.',
 ];
-const vitrinMetniSec = () => sec(VITRIN_VARYASYONLARI);
+// Müşteri bir soru sorup bot cevapladıktan sonra kutucuk gelirken selam tekrarlanmaz
+const YONLENDIRME_VARYASYONLARI = [
+  'İlgilendiğiniz ürün ve modellere göz atmak için aşağıdaki kutucuğa tıklayabilirsiniz.',
+  'Ürün ve modellerimize göz atmak için ilgili kutucuğa tıklayabilirsiniz.',
+  'Modellerimizi görmek için aşağıdaki kutucuğa tıklayabilirsiniz.',
+];
+// Kutucuğa (Forma / Eşofman Üstü) tıklayınca: o ürün grubunun fiyatı + kampanyası, ardından kartlar. Hesap gizli, sadece teklif.
+const GRUP_BILGI = {
+  forma: [
+    'Formalarımız kargo dahil 690₺. 2 forma alana 3. forma hediye, 3 forma 1.350₺.\n\nKapıda ödeme, ürünü görüp teslim alıyorsunuz.',
+    'Kargo dahil tek forma 690₺. 2 Al 1 Hediye kampanyasıyla 3 forma 1.350₺.\n\nÖdeme kapıda, ürünü kontrol edip teslim alabilirsiniz.',
+    '1 forma 690₺, kargo dahil. 2 forma alana 3. forma bizden hediye, toplam 1.350₺.\n\nKapıda ödeme yapıyorsunuz, ürünü görüp teslim alıyorsunuz.',
+  ],
+  esofman: [
+    'Eşofman üstlerimiz kargo dahil 1.250₺. 1 eşofman üstü ile 1 forma alana 1 forma daha, 2 eşofman üstü alana 1 forma hediye.\n\nKapıda ödeme, ürünü görüp teslim alıyorsunuz.',
+    'Eşofman üstü 1.250₺, kargo dahil. Eşofman üstüyle 1 forma alana 1 forma daha hediye, 2 eşofman üstü alana 1 forma hediye.\n\nÖdeme kapıda, ürünü kontrol edip teslim alabilirsiniz.',
+    'Kargo dahil eşofman üstü 1.250₺. 1 eşofman üstü ve 1 forma alana 1 forma daha bizden, 2 eşofman üstü alana 1 forma hediye.\n\nKapıda ödeme yapıyorsunuz, ürünü görüp teslim alıyorsunuz.',
+  ],
+};
 
 const WHATSAPP_KANAL_LINKI = 'https://whatsapp.com/channel/0029Vb94t7OEVccQCwpe6B45';
 const WHATSAPP_KANAL_VARYASYONLAR = [
@@ -1294,8 +1312,8 @@ async function grupKartlariGonder(id, grup) {
 
 // Vitrin: önce kısa kampanya mesajı, EN SON "Forma mı, Eşofman Üstü mü?" kutusu.
 // Kartlar müşteri butona basınca (GRUP_FORMA / GRUP_ESOFMAN) gelir.
-async function vitrinGonder(id, selamli) {
-  const metin = (selamli ? sec(['Merhaba, hoş geldiniz.', 'Hoş geldiniz.', 'Merhaba, hoş geldiniz efendim.']) + '\n\n' : '') + vitrinMetniSec();
+async function vitrinGonder(id, karsilama) {
+  const metin = karsilama ? sec(KARSILAMA_VARYASYONLARI) : sec(YONLENDIRME_VARYASYONLARI);
   await igMesaj(id, metin);
   await rastgeleBekle(1, 2);
   try {
@@ -1441,7 +1459,7 @@ async function isle(id) {
     if (veri.konusmalar.length === 0 && (selamMi || FIYAT_SORUSU_RE.test(birlesik)) && !IBAN_RE.test(birlesik) && !odemeSorusuMu(birlesik)) {
       await igYaziyor(id);
       await rastgeleBekle(2, 4);
-      const vitrinYazi = await vitrinGonder(id, selamMi);
+      const vitrinYazi = await vitrinGonder(id, true);
       veri.gorselGitti = true;
       veri.konusmalar.push({ role: 'user', content: birlesik });
       veri.konusmalar.push({ role: 'assistant', content: vitrinYazi });
@@ -1696,7 +1714,7 @@ YAZIM ÜSLUBU (KATI KURALLAR)
 - Müşteri bir insanla mı yoksa botla mı konuştuğunu sorarsa dürüst ol: mağazanın otomatik asistanı olduğunu söyle ve canlı destek için ###WHATSAPP:...### işaretini ekle. Kendini asla gerçek bir insan olarak tanıtma.
 
 SABİT BİLGİLER (olduğu gibi kullan):
-- Satılan ürünler: ${SATISTAKI_URUN_ADLARI}. Sistem, isim sormadan önce kampanya/fiyat mesajını, ardından "Forma mı, Eşofman Üstü mü?" butonlu kutucuğunu gönderir; müşteri butona basınca o gruptaki ürün kartları gelir. Müşteri özellikle sormadıkça fiyat listesini sen tekrar yazma.
+- Satılan ürünler: ${SATISTAKI_URUN_ADLARI}. İlk mesajda sistem sadece karşılama mesajı ve "Forma / Eşofman Üstü" butonlu kutucuğu gönderir (fiyat ve kampanya YAZMAZ, çünkü farklı ürünlere reklam veriliyor). Müşteri butona basınca sistem o ürün grubunun fiyatını ve kampanyasını söyler, ardından ürün kartlarını gönderir. Müşteri kutucuğa basmadan fiyat sorarsa ilgili ürünün birim fiyatını kısaca söyle ve "detaylar için kutucuğa tıklayabilirsiniz" de. Müşteri özellikle sormadıkça fiyat listesini sen tekrar yazma.
 - Ürün türleri: BEŞİKTAŞ ÇUBUKLU FORMA, BEŞİKTAŞ SİYAH FORMA, BEŞİKTAŞ BEYAZ FORMA birer FORMA'dır. BJK SİYAH EŞOFMAN ve BJK BEYAZ EŞOFMAN birer EŞOFMAN ÜSTÜ (ceket)'dür.
 - Fiyatlar (hepsi kargo dahil, kapıda ödeme): 1 forma 690 TL. 2 Al 1 Hediye: 2 forma alana 3. forma hediye, 3 forma 1.350 TL. 4 forma 1.850 TL (müşteri 4 forma istemedikçe kendiliğinden söyleme). Eşofman üstü tanesi 1.250 TL.
 - KAMPANYALAR (müşteriye sadece teklifi söyle, hesabı ASLA anlatma; tutarları sistem hesaplar):
@@ -1913,11 +1931,14 @@ app.post('/webhook', async (req, res) => {
             try {
               await igYaziyor(sid);
               await rastgeleBekle(0.8, 1.6);
+              const bilgi = sec(GRUP_BILGI[grup]);
+              await igMesaj(sid, bilgi);
+              await rastgeleBekle(1, 2);
               await grupKartlariGonder(sid, grup);
               const v = await dbKullaniciAl(sid);
               v.gorselGitti = true;
               v.konusmalar.push({ role: 'user', content: grup === 'forma' ? 'Forma modellerine bakmak istiyorum.' : 'Eşofman üstü modellerine bakmak istiyorum.' });
-              v.konusmalar.push({ role: 'assistant', content: grup === 'forma' ? '[Forma kartları gösterildi]' : '[Eşofman üstü kartları gösterildi]' });
+              v.konusmalar.push({ role: 'assistant', content: bilgi + (grup === 'forma' ? ' [Forma kartları gösterildi]' : ' [Eşofman üstü kartları gösterildi]') });
               await dbKaydet(sid, v);
             } catch (e) { console.error('Grup postback hatası:', e.response?.data || e.message); }
             continue;
