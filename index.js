@@ -847,12 +847,11 @@ async function igCarousel(id, elements) {
 // Her ürün kodu (0061, 0023, ...) sabit bir "sürüm anahtarı" olarak kullanılır,
 // böylece cache-bust parametresi her istek arasında rastgele değişmez ama
 // görsel URL'sinin kendisi Cloudinary'de değiştiğinde (yeni upload) fark edilir.
-function formaCarouselElementleriOlustur() {
-  return SATISTAKI_URUNLER.map(u => ({
+// grup: 'forma' | 'esofman' | boş (hepsi). Alt yazı KISA: kampanya metni kartlarda tekrar edilmez.
+function formaCarouselElementleriOlustur(grup) {
+  return SATISTAKI_URUNLER.filter(u => !grup || u.tip === grup).map(u => ({
     title: u.ad,
-    subtitle: u.tip === 'esofman'
-      ? 'Kargo Dahil 1.250₺ · 2 Eşofman Üstü Alana 1 Forma Hediye'
-      : 'Kargo Dahil 1 Forma 690₺ · 2 Al 1 Hediye 1.350₺',
+    subtitle: u.tip === 'esofman' ? '1.250₺ · Kargo dahil' : '690₺ · Kargo dahil',
     image_url: cacheBustUrl(u.gorsel, u.kod + (u.surum || '')),
     buttons: [
       {
@@ -1031,21 +1030,71 @@ async function botuAc(id) {
   console.log('Bot bu sohbette yeniden açıldı:', id);
 }
 
-// Ürün kartları (carousel) + kampanya metni
-async function vitrinGonder(id) {
+// "Forma mı, Eşofman Üstü mü?" seçim kutusu (iki postback butonu)
+async function igGrupSecimKutusu(id) {
+  await kuyruklaGonder(() => axios.post(
+    'https://graph.instagram.com/v25.0/me/messages',
+    {
+      recipient: { id },
+      message: { attachment: { type: 'template', payload: {
+        template_type: 'generic',
+        elements: [{
+          title: 'Hangi ürünlere göz atmak istersiniz?',
+          subtitle: 'Aşağıdan seçebilirsiniz',
+          buttons: [
+            { type: 'postback', title: 'Forma', payload: 'GRUP_FORMA' },
+            { type: 'postback', title: 'Eşofman Üstü', payload: 'GRUP_ESOFMAN' },
+          ],
+        }],
+      } } },
+    },
+    { headers: { Authorization: `Bearer ${IG_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+  ));
+}
+
+// Seçilen gruptaki kartları gönderir; olmazsa görsellerle yedeğe düşer
+// KART_DIZILIMI: 'alt_alta' → her ürün ayrı mesajda tek kart (alt alta görünür)
+//                'yan_yana' → tek kaydırmalı carousel
+const KART_DIZILIMI = 'alt_alta';
+async function grupKartlariGonder(id, grup) {
+  const elemanlar = formaCarouselElementleriOlustur(grup);
   try {
-    await igCarousel(id, formaCarouselElementleriOlustur());
-    console.log('✓ Carousel gönderildi');
+    if (KART_DIZILIMI === 'alt_alta') {
+      for (let i = 0; i < elemanlar.length; i++) {
+        await igCarousel(id, [elemanlar[i]]);
+        if (i < elemanlar.length - 1) await rastgeleBekle(0.7, 1.3);
+      }
+    } else {
+      await igCarousel(id, elemanlar);
+    }
   } catch (e) {
-    console.error('✗ Carousel gönderilemedi. Hata:', e.response?.status || e.message);
-    for (const url of TUM_GORSELLER) {
-      try { await igGorsel(id, url); } catch (e2) { console.error('✗ (yedek) Görsel gönderilemedi:', url); }
+    console.error('✗ Grup kartları gönderilemedi:', e.response?.data || e.message);
+    for (const u of SATISTAKI_URUNLER.filter(x => x.tip === grup)) {
+      try { await igGorsel(id, u.gorsel); } catch (e2) {}
       await rastgeleBekle(0.6, 1.2);
     }
   }
-  await rastgeleBekle(1.5, 2.5);
+}
+
+// Vitrin: önce kısa kampanya mesajı, EN SON "Forma mı, Eşofman Üstü mü?" kutusu.
+// Kartlar müşteri butona basınca (GRUP_FORMA / GRUP_ESOFMAN) gelir.
+async function vitrinGonder(id) {
   const metin = vitrinMetniSec();
   await igMesaj(id, metin);
+  await rastgeleBekle(1, 2);
+  try {
+    await igGrupSecimKutusu(id);
+    console.log('✓ Grup seçim kutusu gönderildi');
+  } catch (e) {
+    console.error('✗ Grup kutusu gönderilemedi, tüm kartlar gönderiliyor. Hata:', e.response?.status || e.message);
+    try { await igCarousel(id, formaCarouselElementleriOlustur()); }
+    catch (e2) {
+      for (const url of TUM_GORSELLER) {
+        try { await igGorsel(id, url); } catch (e3) { console.error('✗ (yedek) Görsel gönderilemedi:', url); }
+        await rastgeleBekle(0.6, 1.2);
+      }
+    }
+  }
   return metin;
 }
 
@@ -1240,6 +1289,7 @@ async function isle(id) {
     .replace(/###SEPET:[^#]*###/g, '')
     .replace(/###SIPARIS_BASLA###[\s\S]*?###SIPARIS_BITIS###/g, '')
     .replace(/###VITRIN_GOSTER###/g, '')
+    .replace(/###ESOFMAN_GOSTER###/g, '')
     .replace(/###VIDEO_GOSTER###/g, '')
     .trim();
 
@@ -1332,8 +1382,12 @@ async function isle(id) {
   if (yanit.includes('###VITRIN_GOSTER###') && !vitrinSonraGonder && !siparisSimdiVerildi && !formLink && (durum.kartTekrar || 0) < 2) {
     durum.kartTekrar = (durum.kartTekrar || 0) + 1;
     await rastgeleBekle(1.5, 3);
-    try { await igCarousel(id, formaCarouselElementleriOlustur()); }
-    catch (e) { console.error('Kartlar tekrar gönderilemedi:', e.response?.data || e.message); }
+    await grupKartlariGonder(id, 'forma');
+  }
+  if (yanit.includes('###ESOFMAN_GOSTER###') && !vitrinSonraGonder && !siparisSimdiVerildi && !formLink && (durum.kartTekrar || 0) < 3) {
+    durum.kartTekrar = (durum.kartTekrar || 0) + 1;
+    await rastgeleBekle(1.5, 3);
+    await grupKartlariGonder(id, 'esofman');
   }
 
   // Müşteri ürün/kalite detayı sordu ve daha önce video gitmediyse gönder
@@ -1399,7 +1453,7 @@ YAZIM ÜSLUBU (KATI KURALLAR)
 - Müşteri bir insanla mı yoksa botla mı konuştuğunu sorarsa dürüst ol: mağazanın otomatik asistanı olduğunu söyle ve canlı destek için ###WHATSAPP:...### işaretini ekle. Kendini asla gerçek bir insan olarak tanıtma.
 
 SABİT BİLGİLER (olduğu gibi kullan):
-- Satılan ürünler: ${SATISTAKI_URUN_ADLARI}. Ürün kartlarını ve kampanya/fiyat mesajını sistem otomatik gönderir; müşteri özellikle sormadıkça fiyat listesini sen tekrar yazma.
+- Satılan ürünler: ${SATISTAKI_URUN_ADLARI}. Sistem önce kampanya/fiyat mesajını, ardından "Forma mı, Eşofman Üstü mü?" butonlu kutucuğunu gönderir; müşteri butona basınca o gruptaki ürün kartları gelir. Müşteri özellikle sormadıkça fiyat listesini sen tekrar yazma.
 - Ürün türleri: BEŞİKTAŞ ÇUBUKLU FORMA, BEŞİKTAŞ SİYAH FORMA, BEŞİKTAŞ BEYAZ FORMA birer FORMA'dır. BJK SİYAH EŞOFMAN ve BJK BEYAZ EŞOFMAN birer EŞOFMAN ÜSTÜ (ceket)'dür.
 - Fiyatlar (hepsi kargo dahil, kapıda ödeme): 1 forma 690 TL. 2 Al 1 Hediye kampanyası: 2 forma alana 3. forma hediye, toplam 3 forma 1.350 TL. 4 forma 1.850 TL (bu fiyatı müşteri 4 forma istemedikçe veya sormadıkça kendiliğinden söyleme). Eşofman üstü tanesi 1.250 TL.
 - EŞOFMAN KAMPANYASI (otomatik uygulanır, müşteri sormasa da bilgi ver):
@@ -1425,7 +1479,7 @@ ${FIYAT_TABLOSU}
   Örnekler: 1 adet BEŞİKTAŞ SİYAH FORMA L, baskısız: ###SIPARIS_FORM:0102:L:1### — 2 adet BJK SİYAH EŞOFMAN (1 L, 1 XL) + hediye 1 adet BEŞİKTAŞ BEYAZ FORMA M: ###SIPARIS_FORM:0201:L:1,0201:XL:1,0103:M:1### — 1 adet BEŞİKTAŞ ÇUBUKLU FORMA L "10 TAHA" baskılı + 1 adet BJK BEYAZ EŞOFMAN XL: ###SIPARIS_FORM:0101:L:1:10 TAHA,0202:XL:1###
 
 AKIŞ
-1. Karşılama ve isim: Sohbetin ilk mesajında kısa bir selam ver ve hitap için ismini sor; teşekkür et. Her müşteride farklı kur. Örnekler: "Merhaba, hitap edebilmemiz için isminizi paylaşır mısınız acaba, teşekkürler." / "İyi günler, size isminizle hitap edebilmek için adınızı öğrenebilir miyim, teşekkür ederim." İsmi SADECE BİR KEZ sor. Müşteri paylaşmazsa veya başka bir şey sorarsa ısrar etme, sorusunu cevapla ve "efendim" diyerek siparişe devam et. İsim verirse erkek isminde "Taha Bey", kadın isminde "Ayşe Hanım" şeklinde hitap et; emin değilsen sadece "efendim" de. İsim verildikten sonra kısaca "Memnun oldum Taha Bey" gibi karşıla ve hangi modelle ilgilendiğini sor; ürün kartları hemen ardından sistem tarafından gönderilir.
+1. Karşılama ve isim: Sohbetin ilk mesajında kısa bir selam ver ve hitap için ismini sor; teşekkür et. Her müşteride farklı kur. Örnekler: "Merhaba, hitap edebilmemiz için isminizi paylaşır mısınız acaba, teşekkürler." / "İyi günler, size isminizle hitap edebilmek için adınızı öğrenebilir miyim, teşekkür ederim." İsmi SADECE BİR KEZ sor. Müşteri paylaşmazsa veya başka bir şey sorarsa ısrar etme, sorusunu cevapla ve "efendim" diyerek siparişe devam et. İsim verirse erkek isminde "Taha Bey", kadın isminde "Ayşe Hanım" şeklinde hitap et; emin değilsen sadece "efendim" de. İsim verildikten sonra sadece kısaca "Memnun oldum Taha Bey" de, model sorma; "Forma mı, Eşofman Üstü mü?" kutucuğu hemen ardından sistem tarafından gönderilir.
 
 2. Ürün ve beden: Müşteri bir ürün seçince (kartlardaki Seç butonuna basınca "... almak istiyorum, sipariş vermek istiyorum." mesajı gelir) ürünü sepete ekle, ürün adını söyle ve bedenini sor: boy kilosunu paylaşabileceğini veya aklında bir beden olup olmadığını kısaca sor. Baskıdan bahsetme. Sepeti (formalar ve eşofman üstleri) sohbet geçmişinden sen takip et; her ürünün bedenini ayrı ayrı netleştir.
 
@@ -1436,6 +1490,7 @@ AKIŞ
    d) 4. eşofman üstü seçilirse: "4. eşofman üstünüz 600₺ olacaktır, 4 eşofman üstüne 2 forma da hediye." de ve hediye formalar seçilmediyse seçtir (###VITRIN_GOSTER### ekle).
    e) Eşofman üstlerinin yanına hediye hakkından fazla forma isterse: hediye formanın üzerine eklenen her forma 600₺ olur, mesajın sonuna ###SEPET:...### ekle (toplamı sistem yazar). Sadece forma fiyatı daha ucuzsa sistem otomatik en uygununu uygular, sen karışma.
    f) Eşofman üstü olmadan sadece forma: müşteri 2 forma seçtiğinde 3. formanın hediye olduğunu tek cümleyle hatırlat (örnek: "Bir forma daha seçerseniz üçüncüsü hediye, toplam 1.350 TL.") ve gerekirse ###VITRIN_GOSTER### ekle. Üçüncü forma seçilirse toplam 3 forma 1.350 TL. Dördüncü forma istenirse 4 forma 1.850 TL.
+   g) Müşteri başka/ek eşofman üstü görmek isterse mesajın sonuna ###ESOFMAN_GOSTER### ekle (sadece eşofman kartları gelir). Forma görmek isterse ###VITRIN_GOSTER### ekle.
    g) Müşteri daha fazla ürün istemezse ısrar etme, siparişe geç.
    h) Toplam tutar sorulursa veya söylenecekse mesajı kısa tut ve sonuna ###SEPET:...### ekle; tutarı kendin yazma, sistem ekler.
 
@@ -1605,6 +1660,21 @@ app.post('/webhook', async (req, res) => {
         // Claude entegrasyonu, DB loglaması ve sipariş akışı hiç değişmeden çalışır.
         if (!txt && event.postback?.payload) {
           const payload = String(event.postback.payload);
+          if (payload === 'GRUP_FORMA' || payload === 'GRUP_ESOFMAN') {
+            if (!sid || await botKapaliMi(sid) || floodKontrol(sid)) continue;
+            const grup = payload === 'GRUP_FORMA' ? 'forma' : 'esofman';
+            try {
+              await igYaziyor(sid);
+              await rastgeleBekle(0.8, 1.6);
+              await grupKartlariGonder(sid, grup);
+              const v = await dbKullaniciAl(sid);
+              v.gorselGitti = true;
+              v.konusmalar.push({ role: 'user', content: grup === 'forma' ? 'Forma modellerine bakmak istiyorum.' : 'Eşofman üstü modellerine bakmak istiyorum.' });
+              v.konusmalar.push({ role: 'assistant', content: grup === 'forma' ? '[Forma kartları gösterildi]' : '[Eşofman üstü kartları gösterildi]' });
+              await dbKaydet(sid, v);
+            } catch (e) { console.error('Grup postback hatası:', e.response?.data || e.message); }
+            continue;
+          }
           if (payload.startsWith('SEC_')) {
             const kod = payload.replace('SEC_', '');
             const urunAdi = URUN_KODLARI[kod] || kod;
