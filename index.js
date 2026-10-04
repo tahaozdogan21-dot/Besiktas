@@ -382,12 +382,20 @@ function sadeceSelamVeBilgi(metin) {
   return kelimeler.every(k => ILK_MESAJ_SESSIZ.has(k));
 }
 
+// İlk mesajda Claude YALNIZCA cevap gerektiren bir içerik varsa çalışır (ürün, kod, beden, adet, kargo, iade, stok, kumaş, sipariş niyeti...).
+// Selam, fiyat/bilgi isteği ve diğer sohbet mesajlarında kampanya zaten cevaptır, kampanyadan sonra ek mesaj gitmez.
+const ILK_MESAJ_ICERIK_RE = new RegExp('(?<![\\p{L}\\d])(?:polar\\p{L}*|forma\\p{L}*|eşofman\\p{L}*|esofman\\p{L}*|üst(?:ü|ler|leri|lerin)?|kod\\p{L}*|xl|xxl|xxxl|[23]xl|beden\\p{L}*|boy|kilo\\p{L}*|kargo\\p{L}*|iade\\p{L}*|değişim\\p{L}*|degisim\\p{L}*|stok\\p{L}*|kumaş\\p{L}*|kumas\\p{L}*|içerik\\p{L}*|icerik\\p{L}*|logo\\p{L}*|kalite\\p{L}*|orijinal\\p{L}*|lisans\\p{L}*|sipariş\\p{L}*|siparis\\p{L}*|almak|alacağım|alacagim|alayım|alayim|alalım|alalim|ödeme\\p{L}*|odeme\\p{L}*|kapıda|kapida|kart\\p{L}*|havale|nakit|adres\\p{L}*|telefon|garanti\\p{L}*|tane\\p{L}*|adet)(?![\\p{L}\\d])|(?<!\\d)\\d{4}(?!\\d)', 'iu');
+function ilkMesajaCevapGerekir(metin) {
+  const t = String(metin || '').replace(/bilgi\s+al\p{L}*|fiyat\s+(?:al|öğren|ogren)\p{L}*/giu, ' ');
+  return !sadeceSelamVeBilgi(metin) && ILK_MESAJ_ICERIK_RE.test(t);
+}
+
 // "Hangi ürünü istiyorsunuz..." sorusu yalnızca müşteri sipariş vermek / almak istediğini söylediyse gider (kampanyanın ardından kendiliğinden gitmez)
 const SIPARIS_NIYETI_RE = /(sipariş|siparis|almak\s+istiyorum|alacağım|alacagim|alayım|alayim|alalım|alalim|alıyorum|aliyorum|alırım|alirim|satın|bunu istiyorum|bunlardan|olsun|verecek|vermek)/iu;
 function urunSormaFiltresi(yanit, musteriMetni) {
   if (SIPARIS_NIYETI_RE.test(musteriMetni)) return yanit;
   const cumleler = yanit.split(/(?<=[.!?])\s+|\n+/);
-  const kalan = cumleler.filter(c => !/hangi ürünü|kodlar bulunuyor|ürünün ismini yazabilirsiniz/iu.test(c));
+  const kalan = cumleler.filter(c => !/hangi ürünü|kodlar bulunuyor|ürünün ismini yazabilirsiniz|görseline yanıt verebilir|kodunu yazabilirsiniz/iu.test(c));
   return kalan.join(' ').trim();
 }
 
@@ -504,6 +512,16 @@ async function igYaziyor(id) {
     );
   } catch (e) {}
 }
+// "Görüldü" işareti (Instagram mark_seen)
+async function igGoruldu(id) {
+  try {
+    await axios.post(
+      'https://graph.instagram.com/v25.0/me/messages',
+      { recipient: { id }, sender_action: 'mark_seen' },
+      { headers: { Authorization: `Bearer ${IG_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+    );
+  } catch (e) {}
+}
 function rastgele(min, max) { return Math.floor(min + Math.random() * (max - min)); }
 
 // Mesaj insan gibi gider: önce "yazıyor...", mesaj uzunluğuna göre 1.5-5 sn bekleme, sonra gönderim (hızlı gönderim yok)
@@ -577,12 +595,12 @@ async function claude(mesajlar) {
 // ─── ANA İŞLEM DÖNGÜSÜ ────────────────────────────────────────────────────────
 async function ilkTemas(id) {
   for (const u of GORSELLI_URUNLER) {
-    await bekle(rastgele(2000, 3000)); // görseller arasında 2-3 sn
+    await igYaziyor(id);                 // "yazıyor..." göstergesi görünür
+    await bekle(rastgele(2000, 3000));   // her görselden önce rastgele 2-3 sn
     const mid = await igGorsel(id, u.gorsel);
     if (mid) await midKaydet(mid, u.kod, id);
   }
-  await bekle(rastgele(2000, 3000));
-  await igMesaj(id, VITRIN);
+  await igMesaj(id, VITRIN);             // "yazıyor..." + mesaj uzunluğuna göre bekleme igMesaj içinde
   return VITRIN;
 }
 
@@ -627,7 +645,7 @@ async function isle(id) {
     if (!veri.gorselGitti) {
       veri.gorselGitti = true;
       const vitrin = await ilkTemas(id);
-      const selamlamaMi = sadeceSelamVeBilgi(birlesik);
+      const selamlamaMi = !ilkMesajaCevapGerekir(birlesik); // cevap gerektirmeyen ilk mesaj: kampanyadan sonra sessiz kal
       veri.konusmalar.push({ role: 'user', content: birlesik });
       veri.konusmalar.push({ role: 'assistant', content: '[Ürün görselleri ve kampanya mesajı gönderildi] ' + vitrin.replace(/\n+/g, ' / ') });
       await dbKaydet(id, veri);
@@ -762,7 +780,7 @@ Not içinde "#" karakteri kullanma. Durum notunu müşteriye yazdığın mesajı
 - Görsele yanıtın içeriği bir SORUYSA (ör. "kumaşı ne", "bu kaç para", "bunun bedeni var mı", "içeriği nedir", "logosu sökülür mü") soru O ÜRÜNLE ilgilidir: ürünü görselden bil (polar mı forma mı), soruyu o ürünün bilgileriyle cevapla. Sadece soru sorduğu için o ürünü seçmiş sayma, siparişe/sepete ekleme, "hangi ürün" diye sorma. Müşteri "bunu istiyorum / bunu alacağım / olsun" derse seçmiştir. [MESAJDAKİ ÜRÜNLER] notu mesajda geçen ürünleri gösterir, müşteri soru soruyorsa bunu seçim sayma.
 - Ürünü adı ya da koduyla yazan müşteri de ürünü seçmiştir.
 - ÜRÜN SORMA (KESİN KURAL): "Hangi ürünü istiyorsunuz efendim? Görsellerin üzerinde kodlar bulunuyor, kodu ya da ürünün ismini yazabilirsiniz." mesajını YALNIZCA müşteri sipariş vermek / ürün almak istediğini açıkça söylediğinde ("sipariş vermek istiyorum", "almak istiyorum", "alacağım", "alayım", "nasıl sipariş veririm" gibi) ve hangi ürünü istediği sohbetten ÇIKARILAMIYORSA yaz (model belliyse sorma). Selamlama, fiyat, kampanya, kargo, kumaş, stok, beden gibi bilgi sorularına cevap verirken bu soruyu ASLA ekleme; sadece sorulan sorunun cevabını ver. Kampanya mesajının ardından kendiliğinden ASLA sorma. Ürün belli olana kadar sipariş formuna geçme.
-- "." ".." ya da sadece emoji gelirse (görsele yanıt değilse) ve ürün belli değilse: "Beğendiğiniz ürünün görseline yanıt verebilir ya da kodunu yazabilirsiniz efendim."
+- Müşteri sadece emoji, "." ya da anlamsız bir mesaj yazarsa (görsele yanıt değilse) HİÇBİR ŞEY yazma: cevabında sadece DURUM notunu yaz, müşteriye mesaj yazma. "Beğendiğiniz ürünün görseline yanıt verebilir..." gibi yönlendirme mesajlarını kendiliğinden ASLA gönderme.
 - Müşteri gönderi/reels paylaşırsa: "Efendim görselin üzerindeki kodu bize iletir misiniz? Örneğin ${URUNLER[0].kod} gibi."
 - "Görsel yok / gelmedi / nereden seçeceğim" derse: "Sohbetin başında tüm ürünlerimizi iletmiştik efendim, yukarı kaydırarak inceleyebilirsiniz." Görselleri tekrar gönderebileceğini ASLA söyleme.
 - "Bize yazar mısınız / hatırlatır mısınız" derse: "Bizlere siz yazarsanız iyi olur efendim, gün içinde çok sayıda müşteriyle ilgileniyoruz."
@@ -964,6 +982,9 @@ app.post('/webhook', async (req, res) => {
       for (const event of (entry.messaging || [])) {
         const sid = event.sender?.id;
         let txt = event.message?.text;
+
+        // Müşteri mesaj yazar yazmaz HEMEN "görüldü" olur (metin, fotoğraf, reklam kartı fark etmez; işletmenin kendi mesajı (echo) hariç)
+        if (sid && event.message && !event.message.is_echo) igGoruldu(sid).catch(() => {});
 
         if (!sid || !txt) continue; // ek / reklam kartı / paylaşım: sessizce geçilir
         if (event.message?.is_echo) continue;
