@@ -1,12 +1,12 @@
 {
-  "name": "besiktas-bot",
-  "version": "1.0.0",
-  "description": "Beşiktaş Instagram sipariş botu",
+  "name": "besiktas-bot-sade",
+  "version": "2.0.0",
+  "description": "Beşiktaş Instagram sipariş botu (polar üst + forma, sade sürüm)",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "test": "node fiyat_test.js"
+    "test": "node test_sade.js"
   },
   "engines": {
     "node": ">=18"
@@ -15,8 +15,5 @@
     "@libsql/client": "^0.14.0",
     "axios": "^1.7.0",
     "express": "^4.19.2"
-  },
-  "devDependencies": {
-    "jsdom": "^24.0.0"
   }
 }
