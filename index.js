@@ -248,6 +248,8 @@ const ESKI_KODLAR = {}; // eski kod → yeni kod eşleşmesi gerekirse buraya ya
 const KART_UYARI = 'Kartla ödemelerde kargo firması Pos Cihazı Hizmet Bedeli adı altında +50₺ ekstra ücret alıyor. En uygunu nakit ödemedir, nakit olarak sisteme alalım mı?';
 const KART_CEVAP = 'Kapıda kartla da ödeyebilirsiniz, kartla ödemelerde Pos Cihazı Hizmet Bedeli olarak +50₺ ekstra ücret vardır';
 
+// WhatsApp kutucuğu: tıklanınca müşteriyi WhatsApp'a götürür (Claude link/uzun metin yazmaz, ###WHATSAPP### yazar)
+const WA_LINKI = 'https://wa.me/' + WA_NUMARA + '?text=' + encodeURIComponent('Merhaba, Instagram üzerinden yazıyorum.');
 // Kampanya (vitrin) mesajı: görsellerden sonra müşteriye yalnızca BİR KEZ gider
 const VITRIN = '⚫️ 1 Polar Üst · 1250₺\n⚫️ 2 Polar Üst · 2500₺\n\n🎁 2 Polar Üst alana 1 hediye\n(polar üst ya da forma)\n\n✨ 2\'Lİ SET\n⚫️ 1 Polar Üst + 👕 1 Forma · 1600₺\n\n🚚 Kargo dahil · Kapıda ödeme · Şeffaf kargo';
 
@@ -384,7 +386,7 @@ function sadeceSelamVeBilgi(metin) {
 
 // İlk mesajda Claude YALNIZCA cevap gerektiren bir içerik varsa çalışır (ürün, kod, beden, adet, kargo, iade, stok, kumaş, sipariş niyeti...).
 // Selam, fiyat/bilgi isteği ve diğer sohbet mesajlarında kampanya zaten cevaptır, kampanyadan sonra ek mesaj gitmez.
-const ILK_MESAJ_ICERIK_RE = new RegExp('(?<![\\p{L}\\d])(?:polar\\p{L}*|forma\\p{L}*|eşofman\\p{L}*|esofman\\p{L}*|üst(?:ü|ler|leri|lerin)?|kod\\p{L}*|xl|xxl|xxxl|[23]xl|beden\\p{L}*|boy|kilo\\p{L}*|kargo\\p{L}*|iade\\p{L}*|değişim\\p{L}*|degisim\\p{L}*|stok\\p{L}*|kumaş\\p{L}*|kumas\\p{L}*|içerik\\p{L}*|icerik\\p{L}*|logo\\p{L}*|kalite\\p{L}*|orijinal\\p{L}*|lisans\\p{L}*|sipariş\\p{L}*|siparis\\p{L}*|almak|alacağım|alacagim|alayım|alayim|alalım|alalim|ödeme\\p{L}*|odeme\\p{L}*|kapıda|kapida|kart\\p{L}*|havale|nakit|adres\\p{L}*|telefon|garanti\\p{L}*|tane\\p{L}*|adet)(?![\\p{L}\\d])|(?<!\\d)\\d{4}(?!\\d)', 'iu');
+const ILK_MESAJ_ICERIK_RE = new RegExp('(?<![\\p{L}\\d])(?:polar\\p{L}*|forma\\p{L}*|baskı\\p{L}*|baski\\p{L}*|numara\\p{L}*|bas(?:ıl|ıy|tır|ar)\\p{L}*|yazdır\\p{L}*|yazdir\\p{L}*|isim\\p{L}*|eşofman\\p{L}*|esofman\\p{L}*|üst(?:ü|ler|leri|lerin)?|kod\\p{L}*|xl|xxl|xxxl|[23]xl|beden\\p{L}*|boy|kilo\\p{L}*|kargo\\p{L}*|iade\\p{L}*|değişim\\p{L}*|degisim\\p{L}*|stok\\p{L}*|kumaş\\p{L}*|kumas\\p{L}*|içerik\\p{L}*|icerik\\p{L}*|logo\\p{L}*|kalite\\p{L}*|orijinal\\p{L}*|lisans\\p{L}*|sipariş\\p{L}*|siparis\\p{L}*|almak|alacağım|alacagim|alayım|alayim|alalım|alalim|ödeme\\p{L}*|odeme\\p{L}*|kapıda|kapida|kart\\p{L}*|havale|nakit|adres\\p{L}*|telefon|garanti\\p{L}*|tane\\p{L}*|adet)(?![\\p{L}\\d])|(?<!\\d)\\d{4}(?!\\d)', 'iu');
 function ilkMesajaCevapGerekir(metin) {
   const t = String(metin || '').replace(/bilgi\s+al\p{L}*|fiyat\s+(?:al|öğren|ogren)\p{L}*/giu, ' ');
   return !sadeceSelamVeBilgi(metin) && ILK_MESAJ_ICERIK_RE.test(t);
@@ -392,11 +394,61 @@ function ilkMesajaCevapGerekir(metin) {
 
 // "Hangi ürünü istiyorsunuz..." sorusu yalnızca müşteri sipariş vermek / almak istediğini söylediyse gider (kampanyanın ardından kendiliğinden gitmez)
 const SIPARIS_NIYETI_RE = /(sipariş|siparis|almak\s+istiyorum|alacağım|alacagim|alayım|alayim|alalım|alalim|alıyorum|aliyorum|alırım|alirim|satın|bunu istiyorum|bunlardan|olsun|verecek|vermek)/iu;
+// Sipariş bilgi formu ve "siparişe geçelim mi" izin sorusu: Claude cevabına ###FORM### / ###IZIN### yazar,
+// sistem bu metinleri AYNEN ve AYRI mesaj olarak gönderir (biçim bozulmaz, metin değişmez)
+const FORM_METNI = 'Siparişinizi oluşturmak için;\n\nAD SOYAD\nAÇIK ADRES(İl İlçe Mahalle)\nTELEFON\n\nYeterli olacaktır';
+const IZIN_METNI = 'Siparişinizi oluşturmaya geçelim mi efendim?';
+const FORM_ISARETI_RE = /###\s*FORM\s*###/i;
+const IZIN_ISARETI_RE = /###\s*IZIN\s*###/i;
+const WA_ISARETI_RE = /###\s*WHATSAPP\s*###/i;
+const ISARET_BOL_RE = /(###\s*(?:FORM|IZIN|WHATSAPP)\s*###)/i;
+async function cevabiGonder(id, metin) {
+  for (const parca of metin.split(ISARET_BOL_RE)) {
+    const p = parca.trim();
+    if (!p) continue;
+    if (FORM_ISARETI_RE.test(p)) await igMesaj(id, FORM_METNI);
+    else if (IZIN_ISARETI_RE.test(p)) await igMesaj(id, IZIN_METNI);
+    else if (WA_ISARETI_RE.test(p)) await igWhatsappKutusu(id);
+    else await igMesaj(id, p);
+  }
+}
+
+// RAHATSIZ ETMEME: bot siparişe kendiliğinden atlamaz ve diretmez
+//  • Form, müşteri izin vermeden (ya da kendisi siparişe geçmek istemeden) gitmez: önce izin sorusu gider
+//  • İzin sorusu art arda tekrar edilmez, form bir kez gider (müşteri tekrar istemedikçe)
+const FORM_NIYETI_RE = /(sipariş|siparis|oluştur|olustur|alacağım|alacagim|alayım|alayim|alalım|alalim|verelim|vereceğim|adres|yazayım|yazayim|bilgileri|form)/iu;
+const ONAY_RE = /(?<![\p{L}])(?:evet|olur|tamam|tamamdır|geçelim|gecelim|oluşturalım|olusturalim|lütfen|lutfen|olsun|buyur|tabii?|ok|okey)(?![\p{L}])/iu;
+const SORU_GIBI_RE = /\?|(?<![\p{L}])m[ıiuü](?![\p{L}])|dimi|değil mi|degil mi/iu;
+function tekrarFiltresi(metin, gecmis, musteriMetni) {
+  const asistan = gecmis.filter(m => m.role === 'assistant').map(m => String(m.content));
+  let sonSiparis = -1;
+  asistan.forEach((m, i) => { if (/Siparişiniz Başarıyla/i.test(m)) sonSiparis = i; });
+  const yeni = asistan.slice(sonSiparis + 1);              // önceki siparişin form/izni yeni siparişi etkilemez
+  const formGitti = yeni.some(m => FORM_ISARETI_RE.test(m));
+  const izinSorulduMu = yeni.some(m => IZIN_ISARETI_RE.test(m));
+  const sonIkiIzin = yeni.slice(-2).some(m => IZIN_ISARETI_RE.test(m));
+  const musteriIstedi = FORM_NIYETI_RE.test(musteriMetni);                                                      // müşteri kendisi siparişe geçmek istedi
+  const onayVerdi = String(musteriMetni).length <= 40 && ONAY_RE.test(musteriMetni) && !SORU_GIBI_RE.test(musteriMetni); // "evet / olur / tamam" (soru değil)
+  let s = metin;
+  if (WA_ISARETI_RE.test(s) && asistan.slice(-1).some(m => WA_ISARETI_RE.test(m))) s = s.replace(new RegExp(WA_ISARETI_RE.source, 'gi'), ''); // kutucuk art arda tekrar edilmez
+  if (FORM_ISARETI_RE.test(s)) {
+    if (formGitti) { if (!musteriIstedi) s = s.replace(new RegExp(FORM_ISARETI_RE.source, 'gi'), ''); }                    // form tekrar edilmez
+    else if (!(musteriIstedi || (izinSorulduMu && onayVerdi))) s = s.replace(new RegExp(FORM_ISARETI_RE.source, 'gi'), SORU_GIBI_RE.test(musteriMetni) ? '' : '###IZIN###'); // izinsiz form yok: müşteri soru soruyorsa sadece cevap, değilse önce izin sorulur
+  }
+  if (IZIN_ISARETI_RE.test(s) && (formGitti || sonIkiIzin)) s = s.replace(new RegExp(IZIN_ISARETI_RE.source, 'gi'), '');  // izin sorusu tekrar edilmez
+  s = s.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (WA_ISARETI_RE.test(s)) return '###WHATSAPP###'; // kutucuk varsa başka yazı/parça gitmez (kopuk cümle "yaz." gibi)
+  if (!s && !formGitti && izinSorulduMu && onayVerdi) return '###FORM###'; // müşteri "evet" dedi, bot yine izin sormaya kalkarsa formu gönder
+  return s;
+}
+
+const URUN_SORUSU_RE = /hangi ürünü|kodlar bulunuyor|ürünün ismini yazabilirsiniz|görseline yanıt verebilir|kodunu yazabilirsiniz/iu;
 function urunSormaFiltresi(yanit, musteriMetni) {
   if (SIPARIS_NIYETI_RE.test(musteriMetni)) return yanit;
-  const cumleler = yanit.split(/(?<=[.!?])\s+|\n+/);
-  const kalan = cumleler.filter(c => !/hangi ürünü|kodlar bulunuyor|ürünün ismini yazabilirsiniz|görseline yanıt verebilir|kodunu yazabilirsiniz/iu.test(c));
-  return kalan.join(' ').trim();
+  if (!URUN_SORUSU_RE.test(yanit)) return yanit; // silinecek bir şey yoksa metne dokunma (satır başları / form / sipariş özeti aynen kalır)
+  return yanit.split('\n')
+    .map(satir => satir.split(/(?<=[.!?])\s+/).filter(c => !URUN_SORUSU_RE.test(c)).join(' '))
+    .join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // Müşterinin yazdıklarından kargo bilgisini anlar: ARAS KARGO / PTT KARGO, şubeden alacaksa "ŞUBE" eklenir
@@ -413,18 +465,22 @@ function kargoBelirle(konusmalar, jsonKargo) {
   return firma + ' KARGO' + (sube ? ' ŞUBE' : '');
 }
 
+// Telefon HİÇBİR sınır olmadan kabul edilir. Sadece başında 0 olmadan yazılmış Türk cep numarası (533 123 45 67) başına 0 alır
+function telefonDuzenle(ham) {
+  const s = String(ham || '').trim();
+  const rakam = s.replace(/\D/g, '');
+  if (/^\+?\s*90/.test(s) && rakam.length === 12 && rakam[2] === '5') return '0' + rakam.slice(2);   // +90 533... → 0533...
+  if (rakam.length === 10 && rakam[0] === '5') return '0' + rakam;                                   // 533... → 0533...
+  return s.replace(/\s+/g, '');                                                                       // diğerleri yazıldığı gibi (sınır yok)
+}
+
 function telegramMesajOlustur(siparis) {
   const urun = kodaIsimCevir(String(siparis.urun || '').toUpperCase());
-  const telefon = (siparis.telefon || '').replace(/\s/g, '');
-  let telefonRakam = telefon.replace(/\D/g, '');
-  if (telefonRakam.startsWith('90')) telefonRakam = telefonRakam.slice(2);
-  if (telefonRakam.startsWith('0')) telefonRakam = telefonRakam.slice(1);
-  const telefonUyari = telefonRakam.length !== 10 ? ' ⚠️EKSİK' : '';
   const kargo = (siparis.kargo || 'ARAS KARGO').toString().toUpperCase();
   const odeme = (siparis.odeme || '').toString().toUpperCase();
   return '📦 YENİ SİPARİŞ!\n\n' +
     'AD: ' + String(siparis.ad_soyad || '').toUpperCase() + '\n' +
-    'TEL: ' + siparis.telefon + telefonUyari + '\n' +
+    'TEL: ' + telefonDuzenle(siparis.telefon) + '\n' +
     'ADRES: ' + String(siparis.adres || '').toUpperCase() + '\n\n' +
     'ÜRÜNLER:\n' + urun + '\n\n' +
     'TOPLAM: ' + siparis.toplam + ' TL' + (odeme ? ' - ' + odeme : '') + '\n' +
@@ -563,6 +619,23 @@ async function yorumuCevapla(yorumId, metin) {
   } catch (e) { console.error('Yorum cevapla err:', e.message); }
 }
 
+// WhatsApp kutucuğu (generic şablon + tek buton): yazıyor göstergesi, kısa bekleme, sonra kutucuk
+async function igWhatsappKutusu(id) {
+  await igYaziyor(id);
+  await bekle(rastgele(1500, 2500));
+  try {
+    await axios.post(
+      'https://graph.instagram.com/v25.0/me/messages',
+      { recipient: { id }, message: { attachment: { type: 'template', payload: { template_type: 'generic', elements: [{
+        title: 'Canlı Destek',
+        subtitle: "WhatsApp'tan bize ulaşabilirsiniz",
+        buttons: [{ type: 'web_url', url: WA_LINKI, title: 'WhatsApp' }],
+      }] } } } },
+      { headers: { Authorization: `Bearer ${IG_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+    );
+  } catch (e) { console.error('WhatsApp kutusu err:', e.response && e.response.data ? JSON.stringify(e.response.data).slice(0, 200) : e.message); }
+}
+
 // Claude cevap veremezse null döner (müşteriye teknik hata yazılmaz)
 async function claude(mesajlar) {
   for (let deneme = 1; deneme <= 2; deneme++) {
@@ -624,20 +697,6 @@ async function isle(id) {
     let birlesik = bedenYazimDuzelt(kodDuzelt(benzersiz.join(' ').trim()));
 
     if (!birlesik || anlamsizMi(birlesik)) return;
-
-    // ── TELEFON KONTROLÜ ──────────────────────────────────────────────────────
-    // Mesajda telefon numarası gibi bir şey varsa rakam sayısını kontrol et
-    const telMatch = birlesik.match(/(?:\+90|90|0)?[\s\-]?([5][0-9]{2})[\s\-]?([0-9]{3})[\s\-]?([0-9]{2})[\s\-]?([0-9]{2})/);
-    if (telMatch) {
-      const sadece = birlesik.replace(/\D/g, '');
-      let temizTel = sadece;
-      if (temizTel.startsWith('90')) temizTel = temizTel.slice(2);
-      if (temizTel.startsWith('0')) temizTel = temizTel.slice(1);
-      if (temizTel.length !== 10 || !temizTel.startsWith('5')) {
-        await igMesaj(id, 'Telefon numaranız hatalı görünüyor efendim, doğru numarayı tekrar iletir misiniz?');
-        return;
-      }
-    }
 
     const veri = await dbKullaniciAl(id);
 
@@ -710,7 +769,8 @@ async function isle(id) {
     // Claude'un gizli DURUM notu (ürünler / adet / beden / kampanya / sıradaki adım): müşteriye gitmez, sohbet geçmişinde kalır
     const durumNotu = (yanit.match(/###DURUM:[^#\n]*(?:###)?/) || [''])[0].trim();
     if (durumNotu) console.log('DURUM |', id, '|', durumNotu.slice(0, 300));
-    const temiz = urunSormaFiltresi(emojiTemizle(yanit.replace(/###SIPARIS_BASLA###[\s\S]*?###SIPARIS_BITIS###/g, '').replace(/###DURUM:[^#\n]*(?:###)?/g, '')), birlesik);
+    const temiz0 = urunSormaFiltresi(emojiTemizle(yanit.replace(/###SIPARIS_BASLA###[\s\S]*?###SIPARIS_BITIS###/g, '').replace(/###DURUM:[^#\n]*(?:###)?/g, '')), birlesik);
+    const temiz = tekrarFiltresi(temiz0, veri.konusmalar, birlesik);
 
     veri.konusmalar.push({ role: 'assistant', content: (durumNotu ? durumNotu + '\n' : '') + (temiz || '.') });
     await dbKaydet(id, veri);
@@ -731,7 +791,7 @@ async function isle(id) {
       }
     }
 
-    if (temiz) await igMesaj(id, temiz);
+    if (temiz) await cevabiGonder(id, temiz);
 
     if (durum.bekleyenler.length > 0) isle(id);
 
@@ -749,7 +809,7 @@ const PROMPT = `Sen bir Beşiktaş forma ve polar üst mağazasının satış te
 
 === DİL VE ÜSLUP (EN ÖNEMLİ KURAL: KISA VE YORUMSUZ) ===
 - En fazla 1-2 kısa cümle. Madde işareti yok, kalın yazı yok, EMOJİ YOK.
-- Sade, günlük Türkçe. Daima "siz/sizin/size". "Sen/sana" YASAK.
+- Sade, günlük Türkçe. NAZİK ol: emir kipi ("yaz.", "gönder.", "söyle.") ve kopuk cümle parçaları ASLA kullanma; her cümle tam ve kibar olsun. Daima "siz/sizin/size". "Sen/sana" YASAK.
 - Yorum yapma, teklif cümlesi kurma ("isterseniz...", "göndereyim mi", "yardımcı olabilirim" YASAK). Sadece sorulana cevap ver ya da bir sonraki adımı sor.
 - "efendim" kelimesini en fazla 1 kez, cümle sonunda değil başında kullan.
 - Ürün seçimini asla yorumlama ("harika seçim" vb. YASAK). Siparişe zorlama.
@@ -762,11 +822,14 @@ const PROMPT = `Sen bir Beşiktaş forma ve polar üst mağazasının satış te
 - ADET: "3 adet", "iki tane", "3'lü" gibi ifadeler müşterinin TOPLAM almak istediği ürün sayısıdır ve HEDİYE DE BU SAYININ İÇİNDEDİR. Müşteri 3 adet istiyorsa kampanyadaki hediye zaten o 3'ün içindedir; EKSTRA ürün SEÇTİRME. (Mesajda sistem notu [MÜŞTERİ ADEDİ: N] olabilir, bu müşterinin yazdığı toplam adettir.)
 - "Evet / olur / tamam / lütfen / olsun" gibi cevap, senin bir önceki sorunu onaylamaktır: aynı soruyu tekrar sorma, bir sonraki adıma geç.
 - Müşteri bilgi sorusu sorduysa (stok, iade, kargo, beden vb.) önce onu cevapla; ürün/adet/bedeni hatırla ve gereksiz soru ekleme.
+- BİLGİLER PARÇA PARÇA GELEBİLİR: Müşteri ad soyad, adres ve telefonu ayrı ayrı mesajlarda yazabilir. Son 10 ve daha fazla mesajı birlikte oku, daha önce verilmiş bilgiyi tekrar isteme, sadece eksik olanı iste. Telefonu başında 0 olmadan (533 123 45 67) yazarsa da telefon say.
+- SADE VE DÜŞÜNCELİ SOHBET: Müşteriyi yormadan, kolay ve temiz bir sohbet yürüt: her mesajda tek konu / tek soru, kısa cevap, aynı şeyi tekrar etme, insan gibi doğal ol. Zor ya da karışık gelebilecek hiçbir şey isteme.
+- RAHATSIZ ETME: Müşteri soru sorarken ya da sohbet ederken bir sonraki sipariş adımını (izin, form, ödeme, kargo...) kendiliğinden ekleme; sadece sorusunu cevapla, müşterinin başka soruları olabileceğini düşün. Hiçbir adımı ısrarla ya da her cevabında tekrarlama. Müşteri sessizse acele ettirme.
 - Bir ürün için müşteri bedeni ve adedi zaten yazdıysa ("3 adet XL") tekrar sorma, sipariş akışında o adımı atla.
 
 === DURUM NOTU (GİZLİ, HER CEVABIN EN BAŞINA) ===
 Her cevabının EN BAŞINA, müşteriye gösterilmeyen tek satırlık bir durum notu yaz, sonra müşteriye yazacağın mesaja geç. Önceki cevaplarındaki DURUM notlarını devral ve güncelle (sohbet geçmişinde görürsün). Biçim:
-###DURUM: ürünler=[adet x ürün adı]; toplam_adet=N; beden=[bedenler ya da yok]; kampanya=[hangisi, toplam TL, hediye dahil mi]; onay=[kampanya onayı bekleniyor / alındı / yok]; sıradaki=[kampanya onayı / beden / form / ödeme / kargo / özet / yok]###
+###DURUM: ürünler=[adet x ürün adı]; toplam_adet=N; beden=[bedenler ya da yok]; baskı=[yok ya da hangi forma: yazılacak isim/numara]; kampanya=[hangisi, toplam TL, hediye dahil mi]; onay=[kampanya onayı bekleniyor / alındı / yok]; sıradaki=[kampanya onayı / beden / izin / form / ödeme / kargo / özet / yok]###
 Örnek: ###DURUM: ürünler=3 x ${URUNLER[0].ad}; toplam_adet=3; beden=XL; kampanya=3 polar üst 2 al 1 hediye 2.500 TL (hediye DAHİL, ek seçim YOK); onay=bekleniyor; sıradaki=kampanya onayı###
 Not içinde "#" karakteri kullanma. Durum notunu müşteriye yazdığın mesajın içine ASLA karıştırma. Bu notu önce yaz, sonra mesajı: kampanya, adet ve sıradaki adımı doğru belirlemene yardım eder.
 
@@ -792,7 +855,7 @@ Müşteri polar üstü "polar", "polar üst", "eşofman üstü" diye yazabilir; 
 Başka ürün/model sorulursa: "Efendim güncel modellerimiz bu şekildedir, bunların haricinde ekstra bir modelimiz yoktur."
 Müşteri bu listede olmayan bir kod yazarsa: "Bu kod ürünlerimiz arasında yok efendim, görsellerdeki ürün kodlarından birini yazabilirsiniz."
 Mesajda 4 haneli kod (${URUNLER.map(u => u.kod).join(', ')}) geçiyorsa bu MUTLAKA ürün kodudur; beden ya da kilo sanma.
-Müşteri başka takım sorarsa: "Bu sayfamızda Beşiktaş ürünlerimiz var efendim, diğer takımlar için WhatsApp hattımızdan yazabilirsiniz: https://wa.me/${WA_NUMARA}"
+Müşteri başka takım sorarsa: cevabında SADECE ###WHATSAPP### yaz (sistem WhatsApp kutucuğunu gönderir, başka metin ekleme).
 
 === FİYATLAR (KARGO DAHİL) — ASLA KENDİN HESAPLAMA, SADECE BU TABLODAKİ TOPLAMI KULLAN ===
 Toplam ürün adedine göre (polar üst = P, forma = F):
@@ -808,7 +871,7 @@ Toplam ürün adedine göre (polar üst = P, forma = F):
 - 2 F = 1.350 TL (2 forma alana 1 forma hediye)
 - 3 F = 1.350 TL (2 al 1 hediye)
 Müşteri sadece forma almak isterse: 1 forma 690 TL, 2 forma 1.350 TL, 2 forma alana 1 forma hediye (toplam 3 forma 1.350 TL).
-Bu tabloda OLMAYAN her kombinasyon (ör. 4 forma, 5 ürün) kampanya dışıdır: "Efendim bu adet kampanya dışında kalıyor, fiyat için WhatsApp hattımızdan canlı destek ile görüşebilirsiniz: https://wa.me/${WA_NUMARA}" de ve siparişe geçme. Tablodaki karışık kombinasyonlar için WhatsApp'a yönlendirme, fiyatı tablodan söyle.
+Bu tabloda OLMAYAN her kombinasyon (ör. 4 forma, 5 ürün) kampanya dışıdır: cevabında SADECE ###WHATSAPP### yaz (sistem WhatsApp kutucuğunu gönderir, başka metin ekleme) ve siparişe geçme. Tablodaki karışık kombinasyonlar için WhatsApp'a yönlendirme, fiyatı tablodan söyle.
 İndirim istenirse: "Kampanya fiyatlarımız bu şekildedir efendim."
 
 KAMPANYA KURALLARI — önce müşterinin TOPLAM kaç ürün istediğini belirle (hediye dahil; "3 adet" ya da 3 ürün seçimi = 3 ürün). Toplamı geçmişten, [MESAJDAKİ ÜRÜNLER] ve [MÜŞTERİ ADEDİ] notlarından bul:
@@ -820,6 +883,17 @@ KAMPANYA KURALLARI — önce müşterinin TOPLAM kaç ürün istediğini belirle
 - Kampanya onayından sonra "hediye seç" DEME. Aynı kampanya cümlesini bir kez söyle, tekrarlama.
 - ÖRNEK (yanlış yapılan): Müşteri "3 adet XL polar üst" istedi, bot 2.500 TL kampanyayı onaylattı, müşteri "evet lütfen" dedi. DOĞRU: bir sonraki adıma geç (beden XL zaten belli → bilgi formu). YANLIŞ: "Hediye olarak 1 polar üst ya da 1 forma seçebilirsiniz" (3 adet zaten hediye dahil).
 - ÖRNEK: müşteri polar üst görseline ve forma görseline yanıt verdi → "${URUNLER[0].ad} ve ${URUNLER[2].ad} seçtiniz. 2'li set kampanyası ile 1.600 TL olarak devam edelim mi efendim?" (hediye teklifi değil).
+
+=== İSİM / NUMARA BASKISI (SADECE FORMA) ===
+Formaların üzerine isim ve/veya numara baskısı yapıyoruz, baskı ÜCRETSİZDİR (polar üstte / eşofman üstünde baskı yok). Müşteri sorarsa ("formaya isim yazdırabiliyor muyuz", "numara basılıyor mu", "isim baskısı var mı", "baskı ücretli mi"): WhatsApp'a YÖNLENDİRME, kendin cevapla: "Evet efendim, forma üzerine isim baskısı yapıyoruz, baskı ücretsizdir. İsim ve numara olarak ne yazılmasını istersiniz?"
+- Müşteri sadece isim, sadece sayı (numara) ya da ikisini birden isteyebilir. Hangisini söylerse onu olduğu gibi kabul et ve kısa onayla ("Tamamdır efendim, forma üzerine yazılacaktır."). Diğerini ISRAR ETME, "numara da ister misiniz" / "isim de ekleyelim mi" DEME, üzerine bastırma.
+- Müşteri ne yazdırmak istediğini söylediyse harf ve rakamı aynen not al (değiştirme, yorumlama). Birden fazla forma varsa ve hangisine ne yazılacağı belli değilse SADECE o zaman sor.
+- Baskıyı müşteri sormadıysa ya da istemediyse kendiliğinden TEKLİF ETME.
+- Siparişte baskıyı ilgili forma satırının sonuna şu biçimde yaz: numara ve isim BİTİŞİK, büyük harfle, araya boşluk koymadan: "[FORMA ADI] [BEDEN] - 1 ADET (BASKI: 61AHMET)". Sadece numara ise (BASKI: 61), sadece isim ise (BASKI: AHMET). Numara varsa isimden ÖNCE gelir.
+- Baskının teslim süresi ya da başka bir şart hakkında bilgi UYDURMA: bunlar sorulursa cevabında SADECE ###WHATSAPP### yaz.
+
+=== WHATSAPP KUTUCUĞU ===
+Müşteriyi WhatsApp'a yönlendirmen gereken durumlarda (başka takım, kampanya dışı adet, canlı destek gereken beden, müşteri canlı destek / yetkili / WhatsApp numarası isterse) cevabına SADECE ###WHATSAPP### yaz. Sistem tıklanınca WhatsApp'ı açan tek bir kutucuk gönderir. Başka hiçbir metin, açıklama ya da link yazma, wa.me linki ASLA yazma. Kutucuğu aynı sohbette art arda tekrar gönderme.
 
 === BEDEN ===
 Bedenler: S, M, L, XL, XXL, XXXL. Müşteri bedenini kendisi söylediyse (ilk mesajında, ürün seçerken ya da herhangi bir zamanda) HEMEN kabul et, boy-kilo sorma, tekrar sorma. Tek bir beden yazarsa tüm ürünlere uygula; ürünler için ayrı ayrı yazdıysa (ör. "polar L forma M") ayrı ayrı al.
@@ -835,7 +909,7 @@ Sipariş özetinde ve JSON'da bedeni daima S, M, L, XL, XXL, XXXL biçiminde yaz
 BEDEN BELİRLEME (müşteri bedenini bilmiyorsa, "hangi beden", "kalıp nasıl", "bol mu dar mı", "L olur mu" gibi sorarsa):
 1) Önce şunu söyle: "İsterseniz boy ve kilonuzu söyleyin, beden konusunda ben yardımcı olayım efendim." (Kalıp sorusuysa başa "Ürünlerimiz standart kalıplıdır efendim." ekle. Kalıp için başka yorum yapma, "geniş/dar kalıp" deme.)
 2) Müşteri boy ve kilosunu yazınca mesajın sonunda sistem [BEDEN ÖNERİSİ: X] notu bulunur. O bedeni ÖNERİ olarak söyle: "Boyunuz ve kilonuza göre X uygun olur efendim, farklı bir beden isterseniz belirtmeniz yeterli." Notu müşteriye gösterme, kendin hesap yapma, farklı beden söyleme. Not yoksa ve sadece boy ya da sadece kilo yazıldıysa eksik olanı iste.
-3) Not [BEDEN ÖNERİSİ: CANLI DESTEK] ise: "Efendim size en doğru bedeni canlı destek ile belirleyelim: https://wa.me/${WA_NUMARA} İsterseniz istediğiniz bedeni de yazabilirsiniz." Müşteri kendi bedenini yazarsa onu kabul et.
+3) Not [BEDEN ÖNERİSİ: CANLI DESTEK] ise: cevabında SADECE ###WHATSAPP### yaz (WhatsApp kutucuğu gider, uzun metin yazma). Müşteri kendi bedenini yazarsa onu kabul et.
 4) Standart kalıba göre belirlenir: kilo bedeni belirler, uzun boy bir üst bedene çeker. Müşteri bol giymek isterse "bir beden büyüğü [X+1] da tercih edebilirsiniz", dar giymek isterse "bir beden küçüğü [X-1] da olur" de (sıra: S, M, L, XL, XXL, XXXL).
 Beden tablosunu, aralıkları ve kilo sınırlarını müşteriye ASLA gösterme. Asla "bu beden yok" deme (XXXL'den büyük beden istenirse: "Maalesef sizlere uygun bir bedenimiz bulunmuyor."). Müşteri boy endişesi belirtirse: "Efendim o boy için [beden] uygun olur, rahatlıkla alabilirsiniz."
 BEDEN ÖNERİSİ SADECE ÖNERİDİR, KARAR MÜŞTERİNİNDİR (KESİN KURAL):
@@ -844,7 +918,7 @@ BEDEN ÖNERİSİ SADECE ÖNERİDİR, KARAR MÜŞTERİNİNDİR (KESİN KURAL):
 - Müşteri öneriyi kabul ederse ya da hiçbir şey demeden devam ederse önerdiğin bedeni yaz. Bedeni bir kez netleştirdikten sonra tekrar sorma.
 
 === ÇOCUK ===
-Çocuk bedeni konusunda kesin bilgimiz yok. Müşteri çocuk bedeni sorarsa ya da çocuk için sipariş vermek isterse: "Efendim çocuk bedeni için canlı destek ile görüşebilirsiniz: https://wa.me/${WA_NUMARA}" de, çocuk için sipariş alma, yaş ya da beden uydurma.
+Çocuk bedeni konusunda kesin bilgimiz yok. Müşteri çocuk bedeni sorarsa ya da çocuk için sipariş vermek isterse: cevabında SADECE ###WHATSAPP### yaz (WhatsApp kutucuğu gider), çocuk için sipariş alma, yaş ya da beden uydurma.
 
 === SABİT CEVAPLAR (AYNEN, kelimesi kelimesine kullan) ===
 - Kargo / teslim süresi: "Kargo 2/3 iş günü içerisinde sizlere ulaşır"
@@ -863,32 +937,36 @@ BEDEN ÖNERİSİ SADECE ÖNERİDİR, KARAR MÜŞTERİNİNDİR (KESİN KURAL):
 ADIM 1: Müşteri ürün(ler)i seçer (görsele yanıt, kod ya da isim). Kaç ürün seçtiyse o kadar adet kabul et, adet sorma. Müşteri sipariş vermek istediğini söyleyince ürün belli değilse ürünü sor (yukarıda).
 ADIM 2: Kampanya varsa (yukarıdaki KAMPANYA KURALLARI) tek başına sor ve cevabı bekle: 1 polar üst + 1 forma ise set onayı; TAM 2 polar üst / TAM 2 forma ise hediye seçimi; 3 ürün seçildiyse (3 polar üst, 3 forma, 2 polar üst + 1 forma; hediye zaten içinde) sadece kampanya onayı. Müşteri onaylayınca bu adıma bir daha dönme. Kampanyası olmayan seçimde bu adımı atla.
 ADIM 3: Beden. Müşteri bedenini zaten söylediyse bu adımı atla. Söylemediyse tek başına şunu sor: "Bedeninizi yazabilirsiniz, isterseniz boy ve kilonuzu söyleyin beden konusunda ben yardımcı olayım efendim." (Çocuk ürünse yaş sor.) Boy-kilo gelirse yukarıdaki BEDEN BELİRLEME kurallarını uygula. Her ürün için beden netleşsin.
-ADIM 4: Ürünler ve bedenler belli olunca bilgi formunu gönder (aynen):
-"Sipariş oluşturmak için Gerekli Bilgiler
-
-Ad Soyad
-Açık Adres (İl İlçe Mahalle)
-Telefon No"
-Beden henüz belli değilse formun sonuna "Beden Bilgisi" satırını da ekle. Müşteri bilgilerin bir kısmını zaten verdiyse sadece eksik olanı iste.
+ADIM 4: Ürünler ve bedenler belli olunca hemen form İSTEME ve DİRETME; önce müşteriden İZİN AL. Cevabının sonuna ###IZIN### yaz (sistem "Siparişinizi oluşturmaya geçelim mi efendim?" sorusunu ayrı mesaj olarak gönderir; soruyu kendin yazma) ve müşterinin cevabını BEKLE. Müşteri başka bir şey sorarsa sadece o soruyu cevapla, ###IZIN### ya da ###FORM### ekleme, siparişe geçmeye zorlama; müşteri belki başka şeyler de soracak, soruları bitmeden bir sonraki adıma ilerleme. Müşteri onay verirse (evet / olur / tamam / geçelim / oluşturalım) ya da kendisi "sipariş vermek istiyorum / sipariş oluşturalım" derse cevabına ###FORM### yaz (sistem formu AYNEN ve ayrı mesaj olarak gönderir; formu kendin ASLA yazma, başka biçimde ya da bir cümlenin içinde yazma). İzin sorusunu ve formu müşteriye BİR KEZ gönder, her cevapta tekrarlama; müşteri cevap vermezse ya da tereddüt ederse ısrar etme. Müşteri bilgilerin bir kısmını zaten verdiyse formu gönderme, sadece eksik olanı iste (ör. "Telefon numaranızı da yazar mısınız efendim?"). Müşteri formu tekrar isterse ###FORM### yaz.
 ADIM 5: Bilgiler tamamlanınca ödemeyi sor: "Ödeme şekli Kapıda Nakit mi Kredi Kartı mı?"
   - Kart derse sistem Pos Cihazı Hizmet Bedeli (+50 TL) uyarısını otomatik gönderir ve nakit devam edip etmeyeceklerini sorar. Müşteri "evet / olur / tamam / nakit" derse ödeme NAKİT. "Hayır / kartla olsun / kart" derse ödeme KART, toplama +50 TL ekle. Bu uyarıyı kendin yazma.
-ADIM 6: Sonra kargoyu sor: "Aras Kargo mu PTT Kargo mu olsun?" Müşteri kargoyu zaten söylediyse sorma. Müşteri "şubeden alacağım / şubeye gelsin" derse şubeyi otomatik anla: "aras şube" → ARAS KARGO ŞUBE, "ptt şube" → PTT KARGO ŞUBE. Hangi şirketin şubesi belli değilse sor: "Aras Kargo şubesi mi PTT şubesi mi olsun?" Şube teslimi için ek ücret söyleme. Başka kargo firması sorulursa sadece ARAS ve PTT ile çalıştığımızı söyle.
-ADIM 7: Onay özeti gönder (TAMAMI BÜYÜK HARF):
+ADIM 6: Sonra kargoyu sor: "Aras Kargo mu PTT Kargo mu olsun?" Müşteri kargoyu zaten söylediyse sorma. Müşteri "şubeden alacağım / şubeye gelsin" derse şubeyi otomatik anla: "aras şube" → ARAS KARGO ŞUBE, "ptt şube" → PTT KARGO ŞUBE. Hangi şirketin şubesi belli değilse sor: "Aras Kargo şubesi mi PTT şubesi mi olsun?" Şube teslimi için ek ücret söyleme. Başka kargo firması sorulursa sadece ARAS ve PTT ile çalıştığımızı söyle. Müşteri kargo seçimini bize bırakırsa (fark etmez / siz seçin / sizin tercihiniz / hangisi olursa / siz bilirsiniz) ARAS KARGO olarak işaretle, tekrar sorma.
+ADIM 7: Onay özetini TAM OLARAK şu düzende gönder (TAMAMI BÜYÜK HARF; her bölümün başlığı ayrı satırda, değeri hemen altında; bölümlerin arasında BOŞ SATIR olsun; satır başlarını ve boş satırları ASLA silme, bölümleri tek satıra yapıştırma):
+AD SOYAD
 [AD SOYAD]
 
+ADRES
 [ADRES]
 
+TELEFON
 [TELEFON]
 
+ÜRÜNLER
 [ÜRÜN ADI] [BEDEN] - 1 ADET
-(her ürün ayrı satır, hediye ürünün yanına (HEDİYE))
+[ÜRÜN ADI] [BEDEN] - 1 ADET (HEDİYE)
+(her ürün ayrı satırda, hediye ürünün yanına (HEDİYE); baskı varsa satırın sonuna (BASKI: 61AHMET))
 
-TOPLAM: X TL - KAPIDA NAKİT (kart ise: X TL - KAPIDA KART, +50 TL dahil)
-KARGO: [ARAS KARGO / PTT KARGO / ARAS KARGO ŞUBE / PTT KARGO ŞUBE]
+FİYAT
+[X] TL - KAPIDA NAKİT   (kart ise: [X] TL - KAPIDA KART (+50 TL DAHİL))
+
+KARGO
+[ARAS KARGO / PTT KARGO / ARAS KARGO ŞUBE / PTT KARGO ŞUBE]
 
 Onaylıyor musunuz?
 
-TELEFON DOĞRULAMA: Başındaki 0, +90 ya da 90 atıldıktan sonra tam 10 rakam olmalı ve 5 ile başlamalı. Değilse: "Telefon numaranız hatalı görünüyor, doğru numarayı tekrar iletir misiniz?" Doğru gelene kadar ilerleme.
+Özetin EN SONUNDA yalnızca "Onaylıyor musunuz?" yazar, başka cümle ekleme.
+
+TELEFON: Müşterinin yazdığı numarayı HİÇBİR sınır koymadan kabul et. Başında 0 olmadan yazılabilir (ör. 533 123 45 67), boşluklu / tireli / noktalı ya da +90 ile yazılabilir, yurt dışı numara olabilir; hepsini telefon numarası olarak anla. Uzunluk ya da format denetimi yapma, "hatalı görünüyor" ASLA deme, tekrar isteme. Özette ve JSON'da numarayı rakamlar bitişik yaz; yalnızca Türk cep numarası başında 0 olmadan (5 ile başlayan 10 hane) yazıldıysa başına 0 ekle, başka düzeltme yapma. Müşteri hiç numara vermediyse iste.
 ADRES DOĞRULAMA: İl, ilçe ve mahalle ÜÇÜ de olmadan özete geçme. Eksik olanı sor: "Adresinizde [il/ilçe/mahalle] bilgisi eksik, ekler misiniz?" Sokak/cadde/kapı no eksikse de sor. Müşteri daha önce verdiği bilgiyi tekrar sorma.
 
 === KAPANIŞ (sadece müşteri "evet / onaylıyorum / olur" dedikten sonra) ===
@@ -900,7 +978,7 @@ Ardından şu JSON bloğunu çıkar (müşteriye gösterilmez):
 ###SIPARIS_BASLA###
 {"ad_soyad":"","telefon":"","adres":"","urun":"${URUNLER[2].ad} L - 1 ADET\\n${URUNLER[3].ad} L - 1 ADET (HEDİYE)","adet":"","toplam":"","odeme":"NAKİT ya da KART","kargo":"ARAS KARGO / PTT KARGO / ARAS KARGO ŞUBE / PTT KARGO ŞUBE"}
 ###SIPARIS_BITIS###
-"urun" alanına her ürünü ayrı satıra (\\n ile) yaz. "toplam" sadece rakam (kart ise +50 dahil). "kargo": müşterinin seçtiği kargo (şubeden alacaksa ŞUBE ekli), hiç belirtilmediyse ARAS KARGO. Hiçbir alan boş kalmaz.`;
+"urun" alanına (baskı varsa o ürünün satırının sonuna "(BASKI: ...)" ekle, örn. "(BASKI: 61AHMET)": numara+isim bitişik, büyük harf) her ürünü ayrı satıra (\\n ile) yaz. "toplam" sadece rakam (kart ise +50 dahil). "kargo": müşterinin seçtiği kargo (şubeden alacaksa ŞUBE ekli), hiç belirtilmediyse ARAS KARGO. Hiçbir alan boş kalmaz.`;
 
 
 // ─── WEBHOOK ──────────────────────────────────────────────────────────────────
